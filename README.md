@@ -16,9 +16,12 @@ La importación requiere Python 3.10+ y no instala paquetes. Prepara una copia d
 SQLite, conserva la base de geometrías y registra procedencia y estado de SHAP.
 
 ## Local
-    npm install
-    npm run seed:demo   # opcional: datos ALEATORIOS de prueba (capas NIR y NDVI)
-    npm start           # http://localhost:3000
+    npm ci
+    env DB_PATH=db/parcelas_master.sqlite READ_ONLY=1 LLM_MODE=mock npm run dev
+
+Abre http://localhost:3000. El mapa usa satélite por defecto. Para cambiar de rama,
+probar los límites y revisar antes del merge, sigue
+[la guía de prueba local del mapa](docs/PROBAR_MAPA_LOCAL.md).
 
 ## API
 - GET  /api/parcelas              GeoJSON de los 197 polígonos

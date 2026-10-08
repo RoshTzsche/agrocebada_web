@@ -13,11 +13,15 @@ map.on('resize', ajustarLimites);
 ajustarLimites();
 const resizeObserver = new ResizeObserver(() => { if (!$('#container').hidden) map.invalidateSize(); });
 resizeObserver.observe($('#map'));
-let base = L.tileLayer(C.bases.calles.url, { attribution: C.bases.calles.attribution, maxZoom: 19 }).addTo(map);
-document.querySelectorAll('[name=base]').forEach(r => r.onchange = () => {
-  map.removeLayer(base);
-  const b = C.bases[r.value];
-  base = L.tileLayer(b.url, { attribution: b.attribution, maxZoom: 19 }).addTo(map).bringToBack();
+const baseInicial = C.baseInicial || 'sat', fondoInicial = C.bases[baseInicial];
+let base = L.tileLayer(fondoInicial.url, { attribution: fondoInicial.attribution, maxZoom: 19 }).addTo(map);
+document.querySelectorAll('[name=base]').forEach(r => {
+  r.checked = r.value === baseInicial;
+  r.onchange = () => {
+    map.removeLayer(base);
+    const b = C.bases[r.value];
+    base = L.tileLayer(b.url, { attribution: b.attribution, maxZoom: 19 }).addTo(map).bringToBack();
+  };
 });
 let activeChart = 'rendimiento';
 const resultMap = {enabled:false,model:null,dataset:null,metric:'prediccion',sets:[],sequence:0,controller:null};
