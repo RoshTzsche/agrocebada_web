@@ -39,18 +39,16 @@
         <div id="leyenda"></div>
         <p id="layers-error" class="error" hidden></p>
       </div>
-      <section id="timeline-panel" aria-label="Evolución temporal" hidden>
-        <div class="timeline-heading"><div><span class="eyebrow">EVOLUCIÓN TEMPORAL</span><strong id="timeline-title">Campañas disponibles</strong></div><button id="timeline-close" type="button" aria-label="Cerrar modo temporal">×</button></div>
+      <section id="results-panel" aria-label="Resultados del modelo" hidden>
+        <div class="timeline-heading"><div><span class="eyebrow">RESULTADOS POR PARCELA</span><strong>Rendimiento del conjunto</strong></div><button id="results-close" type="button" aria-label="Cerrar resultados">×</button></div>
         <div class="timeline-settings">
-          <label for="timeline-model">Modelo<select id="timeline-model"></select></label>
-          <label for="timeline-metric">Colorear por<select id="timeline-metric"><option value="prediccion">Predicción</option><option value="observado">Observado</option><option value="error_firmado_t_ha">Error firmado</option><option value="error_absoluto_t_ha">Error absoluto</option></select></label>
+          <label for="results-set">Conjunto y modelo<select id="results-set"></select></label>
+          <label for="results-metric">Colorear por<select id="results-metric"><option value="prediccion">Predicción</option><option value="observado">Observado</option><option value="error_firmado_t_ha">Error firmado</option><option value="error_absoluto_t_ha">Error absoluto</option></select></label>
         </div>
-        <div id="timeline-years" class="timeline-years" role="group" aria-label="Seleccionar campaña"></div>
-        <label class="sr-only" for="timeline-range">Campaña</label><input id="timeline-range" type="range" min="0" max="0" value="0" step="1">
-        <div class="timeline-bottom"><button id="timeline-play" type="button" aria-pressed="false">▶ Reproducir</button><span id="timeline-caption" role="status"></span></div>
-        <div id="timeline-legend"></div><p id="timeline-error" class="error" hidden></p>
+        <p id="results-caption" role="status"></p>
+        <div id="results-legend"></div><p id="results-error" class="error" hidden></p>
       </section>
-      <button id="timeline-button" type="button" aria-expanded="false" aria-controls="timeline-panel">◷ Evolución temporal</button>
+      <button id="results-button" type="button" aria-expanded="false" aria-controls="results-panel">Resultados</button>
       <p id="map-status" role="status">Cargando parcelas…</p>
     </section>
     <section id="dashboard" aria-label="Dashboard de la parcela" aria-live="polite">
@@ -82,3 +80,4 @@
 <script src="app.js"></script>
 </body>
 </html>
+

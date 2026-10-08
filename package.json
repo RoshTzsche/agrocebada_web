@@ -11,6 +11,8 @@
     "dev": "node --watch server.js",
     "seed:demo": "node scripts/seed_demo.js",
     "importar": "node scripts/importar_csv.js",
+    "importar:modelo": "python3 scripts/importar_modelo.py",
+    "verificar:importador": "python3 -m unittest discover -s tests -p 'test_importar_modelo.py'",
     "preparar": "node scripts/preparar_deploy.js",
     "demo:preparar": "node scripts/prepare_demo_db.js",
     "demo:completar": "node scripts/prepare_demo_db.js --completar",
@@ -25,3 +27,4 @@
     "better-sqlite3@11.10.0": true
   }
 }
+
