@@ -20,8 +20,8 @@ document.querySelectorAll('[name=base]').forEach(r => r.onchange = () => {
   base = L.tileLayer(b.url, { attribution: b.attribution, maxZoom: 19 }).addTo(map).bringToBack();
 });
 let activeChart = 'rendimiento';
-const temporal = {enabled:false,model:null,campaign:null,metric:'prediccion',models:[],sequence:0,activation:0,controller:null,timer:null};
-let temporalCataloguePromise=null;
+const resultMap = {enabled:false,model:null,dataset:null,metric:'prediccion',sets:[],sequence:0,controller:null};
+let resultCataloguePromise=null;
 const ramp = ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'];
 const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 function color(t) {
@@ -63,20 +63,20 @@ document.addEventListener('keydown', e => {
 });
 $('#opacidad').oninput = $('#contornos').onchange = refreshStyle;
 async function pintar() {
-  if (temporal.enabled) return;
+  if (resultMap.enabled) return;
   const sequence = ++layerSequence, capa = $('#capa').value, fSel = $('#fecha');
   $('#layers-error').hidden = true;
   if (!capa) { valores = {}; fSel.hidden = true; $('#leyenda').replaceChildren(); refreshStyle(); return; }
   try {
     if (fSel.dataset.capa !== capa) {
       const fechas = await json(`/api/capas/${encodeURIComponent(capa)}/fechas`);
-      if (sequence !== layerSequence || temporal.enabled) return;
+      if (sequence !== layerSequence || resultMap.enabled) return;
       fSel.innerHTML = fechas.map(f => `<option value="${esc(f)}">${esc(f || 'Sin fecha')}</option>`).join('');
       fSel.value = fechas.at(-1) ?? ''; fSel.dataset.capa = capa;
     }
     fSel.hidden = false;
     const data = await json(`/api/capas/${encodeURIComponent(capa)}/valores?fecha=${encodeURIComponent(fSel.value)}`);
-    if (sequence !== layerSequence || temporal.enabled) return;
+    if (sequence !== layerSequence || resultMap.enabled) return;
     valores = data.valores;
     const c = capas.find(x => x.id === capa), vs = Object.values(valores).filter(v => v != null && Number.isFinite(v));
     rango = [c?.min ?? (vs.length ? Math.min(...vs) : 0), c?.max ?? (vs.length ? Math.max(...vs) : 1)];
@@ -84,11 +84,10 @@ async function pintar() {
     refreshStyle();
   } catch (error) { if (sequence === layerSequence) { $('#layers-error').textContent = error.message; $('#layers-error').hidden = false; } }
 }
-$('#capa').onchange = $('#fecha').onchange = () => { disableTemporal(false); pintar(); };
+$('#capa').onchange = $('#fecha').onchange = () => { disableResultMap(false); pintar(); };
 $('#info-button').onclick = () => { if (currentDashboard) requestExplanation(currentDashboard); };
 function vista(view) {
   $('#container').hidden = view !== 'mapa'; $('#tabla').hidden = view !== 'tabla'; $('#documentacion').hidden = view !== 'documentacion';
-  if (view !== 'mapa') stopPlayback();
   document.querySelectorAll('.nav a[data-v]').forEach(a => a.classList.toggle('active', a.dataset.v === view));
   if (view === 'mapa') requestAnimationFrame(() => { map.invalidateSize(); ajustarLimites(); });
 }
@@ -132,7 +131,7 @@ function dashboardState(state, message = '') {
   $('#dashboard-instructions').hidden = state !== 'instructions';
   $('#dashboard-data').hidden = state !== 'data';
   $('#info-button').disabled = state !== 'data';
-  $('#ai-caption').textContent = state === 'data' ? `Analiza la campaña ${currentDashboard.campaña} de la parcela ${currentDashboard.ID_POLIGONO}.` : state === 'loading' ? message : 'Selecciona una parcela con resultados para activar el análisis.';
+  $('#ai-caption').textContent = state === 'data' ? `Analiza los resultados de la parcela ${currentDashboard.ID_POLIGONO}.` : state === 'loading' ? message : 'Selecciona una parcela con resultados para activar el análisis.';
   if (state === 'loading') $('#dashboard-loading').textContent = message;
   if (state === 'error') $('#dashboard-error').textContent = message;
 }
@@ -144,7 +143,7 @@ async function selectParcel(id) {
   $('#dashboard-data').replaceChildren(); clearExplanation();
   dashboardState('loading', `Cargando parcela ${id}…`); refreshStyle();
   try {
-    const selectors = temporal.enabled ? `?${new URLSearchParams({'campaña':temporal.campaign,version_modelo:temporal.model})}` : '';
+    const selectors = resultMap.enabled ? `?${new URLSearchParams({'campaña':resultMap.dataset,version_modelo:resultMap.model})}` : '';
     const data = await json(`/api/parcelas/${encodeURIComponent(id)}/dashboard${selectors}`, { signal: dashboardController.signal });
     if (sequence !== dashboardSequence || selectedParcelId !== String(id)) return;
     currentDashboard = data; updateDashboard(data);
@@ -176,20 +175,21 @@ function updateDashboard(data) {
   const label = data.dataset.label;
   const metric = (name, value, unit = unidad) => `<div class="metric"><span class="metric-label">${esc(name)}</span><strong class="metric-value">${number(value)}${value == null ? '' : ' ' + esc(unit)}</strong></div>`;
   $('#dashboard-data').innerHTML = `<div class="dashboard-heading"><h1>Parcela ${esc(data.ID_POLIGONO)}</h1><span class="dataset-label">${esc(label)}</span></div>
-    <p class="parcel-meta">Campaña ${esc(data.campaña)} · Modelo ${esc(data.version_modelo)}<br>Coordenadas: ${number(data.referencia.latitud_ref, 5)}, ${number(data.referencia.longitud_ref, 5)}</p>
-    <div class="metrics">${metric('Predicción', r.prediccion)}${metric('Observado', r.observado)}${metric('Error firmado', m.error_firmado_t_ha)}${metric('Error absoluto', m.error_absoluto_t_ha)}${metric('Error relativo', m.error_relativo_pct, '%')}${metric('MAE historial', m.mae_historial_t_ha)}</div>
-    <div class="chart-context"><span>Explora tus resultados</span><span>Campaña activa: ${esc(data.campaña)}</span></div>
+    <p class="parcel-meta">Modelo ${esc(data.version_modelo)} · Predicción ${esc(r.tipo_prediccion || 'desconocida')}<br>Coordenadas: ${number(data.referencia.latitud_ref, 5)}, ${number(data.referencia.longitud_ref, 5)}</p>
+    <div class="metrics">${metric('Predicción', r.prediccion)}${metric('Observado', r.observado)}${metric('Error firmado', m.error_firmado_t_ha)}${metric('Error absoluto', m.error_absoluto_t_ha)}${metric('Error relativo', m.error_relativo_pct, '%')}</div>
+    <p class="parcel-meta">Rendimiento cerrado por parcela. Validación del modelo pendiente de confirmar.</p>
+    <div class="chart-context"><span>Explora tus resultados</span><span>Conjunto: ${esc(data.dataset.id || data.campaña)}</span></div>
     <div class="charts-shell">
       <div class="chart-tabs" role="tablist" aria-label="Gráficas de la parcela">
         <button id="tab-rendimiento" type="button" role="tab" data-chart-tab="rendimiento" aria-controls="panel-rendimiento">Rendimiento</button>
         <button id="tab-errores" type="button" role="tab" data-chart-tab="errores" aria-controls="panel-errores">Errores</button>
         <button id="tab-aportes" type="button" role="tab" data-chart-tab="aportes" aria-controls="panel-aportes">Aportes</button>
       </div>
-      <div id="panel-rendimiento" class="chart" role="tabpanel" data-chart-panel="rendimiento" aria-labelledby="tab-rendimiento"><h3>Observado y predicción por campaña</h3><div id="chart1"></div><p class="chart-legend"><span style="--color:#3b528b">Observado</span><span style="--color:#21918c">Predicción</span></p><small>${esc(label)} · ${esc(unidad)}. Selecciona una campaña de la gráfica para verla en el mapa.</small></div>
-      <div id="panel-errores" class="chart" role="tabpanel" data-chart-panel="errores" aria-labelledby="tab-errores" hidden><h3>Error firmado por campaña</h3><div id="chart2"></div><small>${esc(label)} · Predicción menos observado (${esc(unidad)}). Selecciona una campaña para ver su error en el mapa.</small></div>
-      <div id="panel-aportes" class="chart" role="tabpanel" data-chart-panel="aportes" aria-labelledby="tab-aportes" hidden><h3>Contribuciones locales · ${esc(data.campaña)}</h3><div id="chart3"></div><small>${esc(label)} · Los aportes no prueban causalidad.</small></div>
+      <div id="panel-rendimiento" class="chart" role="tabpanel" data-chart-panel="rendimiento" aria-labelledby="tab-rendimiento"><h3>Rendimiento de esta parcela</h3><div id="chart1"></div><small>${esc(label)} · ${esc(unidad)}. Comparación preliminar entre predicción y observado.</small></div>
+      <div id="panel-errores" class="chart" role="tabpanel" data-chart-panel="errores" aria-labelledby="tab-errores" hidden><h3>Error de esta parcela</h3><div id="chart2"></div><small>Predicción menos observado (${esc(unidad)}). Positivo: sobreestimación; negativo: subestimación.</small></div>
+      <div id="panel-aportes" class="chart" role="tabpanel" data-chart-panel="aportes" aria-labelledby="tab-aportes" hidden><h3>Contribuciones locales</h3><div id="chart3"></div><small>${esc(label)} · Los aportes no prueban causalidad.</small></div>
     </div>
-    <details class="data-details"><summary>Variables de la explicación</summary><div class="table-wrap"><table><thead><tr><th>Variable</th><th>Valor</th><th>Unidad</th><th>Aporte (${esc(unidad)})</th></tr></thead><tbody>${data.contribuciones.map(c => `<tr><td>${esc(c.variable)}</td><td>${number(c.valor)}</td><td>${esc(c.unidad)}</td><td>${number(c.aporte_t_ha)}</td></tr>`).join('') || '<tr><td colspan="4">No hay contribuciones disponibles para esta campaña.</td></tr>'}</tbody></table></div></details>
+    <details class="data-details"><summary>Variables de la explicación</summary><div class="table-wrap"><table><thead><tr><th>Variable</th><th>Valor</th><th>Unidad</th><th>Aporte (${esc(unidad)})</th></tr></thead><tbody>${data.contribuciones.map(c => `<tr><td>${esc(c.variable)}</td><td>${number(c.valor)}</td><td>${esc(c.unidad)}</td><td>${number(c.aporte_t_ha)}</td></tr>`).join('') || '<tr><td colspan="4">No hay aportes confirmados para la predicción mostrada.</td></tr>'}</tbody></table></div></details>
     <details class="data-details"><summary>Valores existentes en la base</summary><div class="table-wrap"><table><thead><tr><th>Capa</th><th>Fecha</th><th>Valor</th><th>Unidad</th></tr></thead><tbody>${data.mediciones_existentes.map(x => `<tr><td>${esc(x.capa || x.capa_id)}</td><td>${esc(x.fecha)}</td><td>${number(x.valor, 3)}</td><td>${esc(x.unidad)}</td></tr>`).join('') || '<tr><td colspan="4">Sin valores disponibles.</td></tr>'}</tbody></table></div></details>`;
   renderChart1(data); renderChart2(data); renderChart3(data);
   showChart(activeChart); dashboardState('data');
@@ -201,47 +201,40 @@ function updateDashboard(data) {
       if (next!=null) { e.preventDefault();showChart(tabs[next],true); }
     };
   });
-  $('#dashboard-data').onclick=e => {
-    const hit=e.target.closest('[data-campaign]');
-    if (hit) activateTemporal({campaign:hit.dataset.campaign,model:data.version_modelo,metric:hit.closest('#chart2') ? 'error_firmado_t_ha' : 'prediccion'});
-  };
-  $('#dashboard-data').onkeydown=e => {
-    const hit=e.target.closest('[data-campaign]');
-    if (hit && ['Enter',' '].includes(e.key)) { e.preventDefault();hit.dispatchEvent(new MouseEvent('click',{bubbles:true})); }
-  };
 }
 function svgChart(content, height = 190) { return `<svg viewBox="0 0 460 ${height}" role="img" aria-label="Gráfica de resultados">${content}</svg>`; }
 function renderChart1(data) {
-  const rows = data.historial, max = Math.max(1, ...rows.flatMap(h => [h.prediccion, h.observado]).filter(v => v != null)) * 1.15;
-  const y = v => 145 - 125 * v / max, x = i => 70 + i * 335 / Math.max(1, rows.length - 1);
-  let svg = `<line x1="48" y1="145" x2="435" y2="145" stroke="#bbb"/><line x1="48" y1="20" x2="48" y2="145" stroke="#bbb"/>`;
-  for (let i = 0; i <= 4; i++) { const value = max * i / 4; svg += `<text x="40" y="${y(value) + 4}" text-anchor="end" font-size="11">${number(value, 1)}</text>`; }
-  rows.forEach((h, i) => {
-    svg += `<g class="campaign-hit" data-campaign="${esc(h.campaña)}" role="button" tabindex="0" aria-label="Ver campaña ${esc(h.campaña)} en el mapa"><rect x="${x(i)-24}" y="15" width="48" height="165" fill="transparent"/>`;
-    svg += `<circle cx="${x(i) + 5}" cy="${y(h.prediccion)}" r="5" fill="#21918c"><title>Predicción: ${number(h.prediccion)}</title></circle>`;
-    if (h.observado != null) svg += `<circle cx="${x(i) - 5}" cy="${y(h.observado)}" r="5" fill="#3b528b"><title>Observado: ${number(h.observado)}</title></circle>`;
-    else svg += `<text x="${x(i)}" y="180" text-anchor="middle" font-size="10">Sin observado</text>`;
-    svg += `<text x="${x(i)}" y="163" text-anchor="middle" font-size="11">${esc(h.campaña)}</text></g>`;
+  const rows=[['Predicción',data.resultado.prediccion,'#21918c'],['Observado',data.resultado.observado,'#3b528b']];
+  const max=Math.max(1,...rows.map(row=>row[1]).filter(v=>v!=null))*1.2;
+  const y=value=>155-115*value/max;
+  let svg='<text x="48" y="15" font-size="11">'+esc(data.unidad_rendimiento)+'</text><line x1="48" y1="155" x2="435" y2="155" stroke="#bbb"/>';
+  for(let i=0;i<=4;i++) {
+    const value=max*i/4;
+    svg+=`<line x1="48" y1="${y(value)}" x2="435" y2="${y(value)}" stroke="#eee"/><text x="40" y="${y(value)+4}" text-anchor="end" font-size="11">${number(value,1)}</text>`;
+  }
+  rows.forEach(([name,value,fill],i)=>{
+    const x=130+i*180;
+    svg+=`<text x="${x}" y="180" text-anchor="middle" font-size="12">${esc(name)}</text>`;
+    if(value==null) svg+=`<text x="${x}" y="105" text-anchor="middle" font-size="12">Sin dato</text>`;
+    else svg+=`<rect x="${x-35}" y="${y(value)}" width="70" height="${155-y(value)}" rx="5" fill="${fill}"><title>${esc(name)}: ${number(value)} ${esc(data.unidad_rendimiento)}</title></rect><text x="${x}" y="${y(value)-8}" text-anchor="middle" font-size="12">${number(value)}</text>`;
   });
-  $('#chart1').innerHTML = rows.length ? svgChart(svg) : '<p>Sin historial.</p>';
+  $('#chart1').innerHTML=svgChart(svg,200);
 }
 function renderChart2(data) {
-  const rows = data.historial, max = Math.max(.1, ...rows.map(h => Math.abs(h.error_firmado_t_ha ?? 0))) * 1.15;
-  const x = i => 75 + i * 320 / Math.max(1, rows.length - 1);
-  let svg = '<line x1="48" y1="85" x2="435" y2="85" stroke="#777"/><text x="40" y="89" text-anchor="end" font-size="11">0</text>';
-  svg += `<text x="40" y="24" text-anchor="end" font-size="11">${number(max)}</text><text x="40" y="152" text-anchor="end" font-size="11">−${number(max)}</text>`;
-  rows.forEach((h, i) => {
-    svg += `<g class="campaign-hit" data-campaign="${esc(h.campaña)}" role="button" tabindex="0" aria-label="Ver error de campaña ${esc(h.campaña)} en el mapa"><rect x="${x(i)-24}" y="15" width="48" height="165" fill="transparent"/>`;
-    const value = h.error_firmado_t_ha;
-    if (value == null) svg += `<text x="${x(i)}" y="80" text-anchor="middle" font-size="11">N/D</text>`;
-    else { const height = Math.abs(value) * 62 / max; svg += `<rect x="${x(i)-14}" y="${value >= 0 ? 85-height : 85}" width="28" height="${height}" fill="${value >= 0 ? '#3b528b' : '#21918c'}"><title>${number(value)} ${esc(data.unidad_rendimiento)}</title></rect>`; }
-    svg += `<text x="${x(i)}" y="171" text-anchor="middle" font-size="11">${esc(h.campaña)}</text></g>`;
-  });
-  $('#chart2').innerHTML = rows.length ? svgChart(svg) : '<p>Sin historial.</p>';
+  const error=data.metricas.error_firmado_t_ha;
+  if(error==null) { $('#chart2').innerHTML='<p>Sin rendimiento observado: no se puede calcular el error.</p>';return; }
+  const extent=Math.max(1,Math.abs(error)*1.2),x=value=>240+175*value/extent;
+  const left=Math.min(240,x(error)),width=Math.abs(x(error)-240);
+  const svg=`<text x="240" y="25" text-anchor="middle" font-size="13">${number(error)} ${esc(data.unidad_rendimiento)}</text><line x1="65" y1="100" x2="415" y2="100" stroke="#bbb"/><line x1="240" y1="45" x2="240" y2="115" stroke="#777"/><rect x="${left}" y="62" width="${width}" height="30" rx="4" fill="${error>=0 ? '#3b528b' : '#21918c'}"><title>Error firmado: ${number(error)} ${esc(data.unidad_rendimiento)}</title></rect><text x="65" y="135" text-anchor="middle" font-size="11">${number(-extent,1)}</text><text x="240" y="135" text-anchor="middle" font-size="11">0</text><text x="415" y="135" text-anchor="middle" font-size="11">${number(extent,1)}</text>`;
+  $('#chart2').innerHTML=svgChart(svg,155);
 }
 function renderChart3(data) {
   const rows = data.contribuciones;
-  if (!rows.length) { $('#chart3').innerHTML = '<p>No hay contribuciones locales disponibles.</p>'; return; }
+  if (!rows.length) {
+    const status=data.explicabilidad?.estado;
+    $('#chart3').innerHTML=status==='incoherente' ? '<p>Los SHAP recibidos no reconstruyen la predicción mostrada. Explicación pendiente de corregir.</p>' : '<p>Explicación SHAP pendiente: falta confirmar el modelo y la predicción que explican los aportes.</p>';
+    return;
+  }
   const max = Math.max(.01, ...rows.map(c => Math.abs(c.aporte_t_ha))), height = rows.length * 36 + 40, zero = 310;
   let svg = `<line x1="${zero}" y1="5" x2="${zero}" y2="${height-28}" stroke="#777"/>`;
   rows.forEach((c, i) => {
@@ -262,105 +255,70 @@ async function requestExplanation(context) {
     });
     if (!isCurrent()) return;
     $('#info-response').textContent = data.explanation; $('#info-response').hidden = false;
-    $('#ai-caption').textContent = data.mode === 'mock' ? 'Análisis local de demostración: sin llamada a IA.' : `Análisis de la campaña ${context.campaña} · ${context.ID_POLIGONO}`;
+    $('#ai-caption').textContent = data.mode === 'mock' ? 'Explicación local: sin llamada a IA.' : `Análisis de la parcela ${context.ID_POLIGONO}`;
   } catch (error) {
     if (!isCurrent() || error.name === 'AbortError') return;
     $('#info-error').textContent = error.message; $('#info-error').hidden = false;
   } finally { if (isCurrent()) { $('#info-loading').hidden = true; $('#info-button').disabled = false; $('#info-button').setAttribute('aria-busy','false'); } }
 }
-function stopPlayback() {
-  temporal.playing=false;clearTimeout(temporal.timer);temporal.timer=null;
-  $('#timeline-play').textContent='▶ Reproducir';$('#timeline-play').setAttribute('aria-pressed','false');
-}
-function timelineCampaigns() { return temporal.models.find(model => model.version_modelo===temporal.model)?.campanas.map(row => row.campaña) || []; }
-function renderTimeline() {
-  const campaigns=timelineCampaigns(),index=campaigns.indexOf(temporal.campaign);
-  $('#timeline-model').innerHTML=temporal.models.map(model => `<option value="${esc(model.version_modelo)}">${esc(model.version_modelo)}</option>`).join('');
-  $('#timeline-model').value=temporal.model;$('#timeline-metric').value=temporal.metric;
-  $('#timeline-years').innerHTML=campaigns.map(campaign => `<button type="button" data-year="${esc(campaign)}" aria-pressed="${campaign===temporal.campaign}">${esc(campaign)}</button>`).join('');
-  $('#timeline-range').max=String(Math.max(0,campaigns.length-1));$('#timeline-range').value=String(Math.max(0,index));
-  $('#timeline-range').setAttribute('aria-valuetext',temporal.campaign || 'Sin campaña');
-  $('#timeline-play').disabled=campaigns.length<2;
-}
-async function activateTemporal({campaign,model,metric} = {}) {
-  stopPlayback();
-  const activation=++temporal.activation;
-  temporal.enabled=true;++layerSequence;
-  $('#timeline-panel').hidden=false;$('#timeline-button').setAttribute('aria-expanded','true');
-  $('#timeline-caption').textContent='Cargando campañas…';$('#timeline-error').hidden=true;toggleLayers(false);
+async function activateResultMap() {
+  resultMap.enabled=true;++layerSequence;
+  $('#results-panel').hidden=false;$('#results-button').setAttribute('aria-expanded','true');
+  $('#results-caption').textContent='Cargando conjuntos…';$('#results-error').hidden=true;toggleLayers(false);
   try {
-    temporalCataloguePromise ??= json('/api/resultados/campanas').catch(error => {temporalCataloguePromise=null;throw error;});
-    const catalogue=await temporalCataloguePromise;
-    if (!temporal.enabled || activation!==temporal.activation) return;
-    temporal.models=catalogue.modelos;
-    if (!temporal.models.length) throw new Error('No hay campañas disponibles');
-    const preferred=model || temporal.model || currentDashboard?.version_modelo;
-    temporal.model=temporal.models.some(item => item.version_modelo===preferred) ? preferred : temporal.models.at(-1).version_modelo;
-    const campaigns=timelineCampaigns(),preferredCampaign=campaign || temporal.campaign || currentDashboard?.campaña;
-    temporal.campaign=campaigns.includes(preferredCampaign) ? preferredCampaign : campaigns.at(-1);
-    temporal.metric=metric || temporal.metric;
-    renderTimeline();await paintTemporal(true);
+    resultCataloguePromise ??= json('/api/resultados/campanas').catch(error=>{resultCataloguePromise=null;throw error;});
+    const catalogue=await resultCataloguePromise;
+    if(!resultMap.enabled) return;
+    resultMap.sets=catalogue.modelos.flatMap(model=>model.campanas.map(set=>({...set,model:model.version_modelo})));
+    if(!resultMap.sets.length) throw new Error('No hay resultados disponibles');
+    const preferred=resultMap.sets.findIndex(set=>set.model===(currentDashboard?.version_modelo || resultMap.model) && set.campaña===(currentDashboard?.campaña || resultMap.dataset));
+    const index=preferred>=0 ? preferred : resultMap.sets.length-1;
+    $('#results-set').innerHTML=resultMap.sets.map((set,i)=>`<option value="${i}">${esc(set.label)} · ${esc(set.model)} · ${esc(set.dataset_id)}</option>`).join('');
+    $('#results-set').value=String(index);
+    resultMap.model=resultMap.sets[index].model;resultMap.dataset=resultMap.sets[index].campaña;
+    $('#results-metric').value=resultMap.metric;
+    await paintResultMap();
   } catch(error) {
-    if (!temporal.enabled || activation!==temporal.activation) return;
-    $('#timeline-error').textContent=error.message;$('#timeline-error').hidden=false;$('#timeline-caption').textContent='Modo temporal no disponible';
+    if(!resultMap.enabled) return;
+    $('#results-error').textContent=error.message;$('#results-error').hidden=false;$('#results-caption').textContent='Resultados no disponibles';
   }
 }
-function disableTemporal(restore = true) {
-  const wasEnabled=temporal.enabled;
-  stopPlayback();temporal.enabled=false;++temporal.activation;++temporal.sequence;temporal.controller?.abort();
-  $('#timeline-panel').hidden=true;$('#timeline-button').setAttribute('aria-expanded','false');
-  if (restore) pintar();
-  if (wasEnabled && selectedParcelId) selectParcel(selectedParcelId);
+function disableResultMap(restore=true) {
+  const wasEnabled=resultMap.enabled;
+  resultMap.enabled=false;++resultMap.sequence;resultMap.controller?.abort();
+  $('#results-panel').hidden=true;$('#results-button').setAttribute('aria-expanded','false');
+  if(restore) pintar();
+  if(wasEnabled && selectedParcelId) selectParcel(selectedParcelId);
 }
-async function selectCampaign(campaign) {
-  if (!temporal.enabled || !timelineCampaigns().includes(campaign)) return;
-  temporal.campaign=campaign;renderTimeline();await paintTemporal(true);
-}
-async function paintTemporal(syncDashboard) {
-  if (!temporal.enabled || !temporal.campaign || !temporal.model) return;
-  const sequence=++temporal.sequence;
-  temporal.controller?.abort();temporal.controller=new AbortController();
-  valores={};refreshStyle();$('#timeline-error').hidden=true;$('#timeline-legend').replaceChildren();
-  $('#timeline-title').textContent=`${$('#timeline-metric').selectedOptions[0].textContent} · ${temporal.campaign}`;
-  $('#timeline-caption').textContent=`Cargando campaña ${temporal.campaign}…`;
-  // La selección y la explicación usan exactamente la campaña/modelo que se pinta.
-  if (syncDashboard && selectedParcelId) selectParcel(selectedParcelId);
-  const params=new URLSearchParams({'campaña':temporal.campaign,version_modelo:temporal.model,metrica:temporal.metric});
+async function paintResultMap() {
+  if(!resultMap.enabled || !resultMap.dataset || !resultMap.model) return;
+  const sequence=++resultMap.sequence;
+  resultMap.controller?.abort();resultMap.controller=new AbortController();
+  valores={};refreshStyle();$('#results-error').hidden=true;$('#results-legend').replaceChildren();
+  $('#results-caption').textContent='Cargando valores…';
+  if(selectedParcelId) selectParcel(selectedParcelId);
+  const params=new URLSearchParams({'campaña':resultMap.dataset,version_modelo:resultMap.model,metrica:resultMap.metric});
   try {
-    const data=await json(`/api/resultados/valores?${params}`,{signal:temporal.controller.signal});
-    if (!temporal.enabled || sequence!==temporal.sequence) return;
+    const data=await json(`/api/resultados/valores?${params}`,{signal:resultMap.controller.signal});
+    if(!resultMap.enabled || sequence!==resultMap.sequence) return;
     valores=data.valores;rango=data.rango;refreshStyle();
-    const count=Object.values(valores).filter(value => value!=null).length;
-    $('#timeline-caption').textContent=`${count} parcelas con dato · ${data.unidad}`;
-    $('#timeline-legend').innerHTML=`<div class="grad" style="background:linear-gradient(90deg,${ramp})"></div><div class="rango"><span>${number(rango[0])}</span><span>${number(rango[1])}</span></div><small>${esc(data.dataset_label)} · Escala común entre campañas. Gris: sin dato.</small>`;
+    const count=Object.values(valores).filter(value=>value!=null).length;
+    $('#results-caption').textContent=`${count} parcelas con dato · ${data.unidad}`;
+    $('#results-legend').innerHTML=`<div class="grad" style="background:linear-gradient(90deg,${ramp})"></div><div class="rango"><span>${number(rango[0])}</span><span>${number(rango[1])}</span></div><small>${esc(data.dataset_label)} · Gris: sin dato.</small>`;
   } catch(error) {
-    if (!temporal.enabled || sequence!==temporal.sequence || error.name==='AbortError') return;
-    $('#timeline-error').textContent=error.message;$('#timeline-error').hidden=false;$('#timeline-caption').textContent='No se pudo cargar la campaña';stopPlayback();
+    if(!resultMap.enabled || sequence!==resultMap.sequence || error.name==='AbortError') return;
+    $('#results-error').textContent=error.message;$('#results-error').hidden=false;$('#results-caption').textContent='No se pudieron cargar los valores';
   }
 }
-$('#timeline-button').onclick=() => temporal.enabled ? disableTemporal() : activateTemporal();
-$('#timeline-close').onclick=() => disableTemporal();
-$('#timeline-years').onclick=e => {const button=e.target.closest('[data-year]');if (button) {stopPlayback();selectCampaign(button.dataset.year);} };
-$('#timeline-range').oninput=e => {stopPlayback();selectCampaign(timelineCampaigns()[Number(e.target.value)]);};
-$('#timeline-model').onchange=e => {
-  stopPlayback();temporal.model=e.target.value;
-  const campaigns=timelineCampaigns();if (!campaigns.includes(temporal.campaign)) temporal.campaign=campaigns.at(-1);
-  renderTimeline();paintTemporal(true);
+$('#results-button').onclick=()=>resultMap.enabled ? disableResultMap() : activateResultMap();
+$('#results-close').onclick=()=>disableResultMap();
+$('#results-set').onchange=e=>{
+  const set=resultMap.sets[Number(e.target.value)];
+  resultMap.model=set.model;resultMap.dataset=set.campaña;paintResultMap();
 };
-$('#timeline-metric').onchange=e => {stopPlayback();temporal.metric=e.target.value;paintTemporal(false);};
-$('#timeline-play').onclick=async () => {
-  if (temporal.playing) {stopPlayback();return;}
-  temporal.playing=true;$('#timeline-play').textContent='Ⅱ Pausar';$('#timeline-play').setAttribute('aria-pressed','true');
-  async function advance() {
-    if (!temporal.playing || !temporal.enabled) return;
-    const campaigns=timelineCampaigns(),index=campaigns.indexOf(temporal.campaign);
-    await selectCampaign(campaigns[(index+1)%campaigns.length]);
-    if (temporal.playing && temporal.enabled) temporal.timer=setTimeout(advance,2200);
-  }
-  await advance();
-};
-for (const id of ['timeline-panel','timeline-button']) {
+$('#results-metric').onchange=e=>{resultMap.metric=e.target.value;paintResultMap();};
+for(const id of ['results-panel','results-button']) {
   L.DomEvent.disableClickPropagation($('#'+id));L.DomEvent.disableScrollPropagation($('#'+id));
 }
-document.addEventListener('visibilitychange',()=>{if (document.hidden) stopPlayback();});
 init().catch(error => { $('#map-status').textContent = error.message; $('#map-status').hidden = false; });
+

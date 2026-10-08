@@ -1,5 +1,20 @@
 # AgroCebada · Web de mapas (Node + Express + SQLite + Leaflet)
 
+## Resultados reales del modelo
+
+El dashboard muestra rendimiento cerrado por parcela: barras de predicción y
+observado, errores y aportes SHAP coherentes. El botón Resultados colorea el mapa
+por el conjunto seleccionado. Las mediciones conservan su selector de fechas.
+
+Para importar y sustituir un Excel o ZIP sin cambiar las gráficas, sigue
+[el contrato y los comandos de importación](docs/IMPORTAR_MODELO.md).
+
+    npm run importar:modelo -- /ruta/archivo.xlsx --dataset preliminar-v1 --sin-mediciones
+    DB_PATH=db/parcelas_modelo.sqlite READ_ONLY=1 DEMO_MODE=0 LLM_MODE=mock npm start
+
+La importación requiere Python 3.10+ y no instala paquetes. Prepara una copia de
+SQLite, conserva la base de geometrías y registra procedencia y estado de SHAP.
+
 ## Local
     npm install
     npm run seed:demo   # opcional: datos ALEATORIOS de prueba (capas NIR y NDVI)
@@ -33,3 +48,4 @@ Respalda siempre `db/parcelas_master.sqlite` antes de importar.
 1. En tu laptop: importa CSVs, apaga el servidor y corre `npm run preparar`.
 2. Sube el proyecto a GitHub (incluyendo db/parcelas_master.sqlite).
 3. Render → New Web Service → Docker. El Dockerfile ya activa READ_ONLY=1.
+
